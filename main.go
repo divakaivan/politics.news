@@ -7,10 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -35,7 +38,6 @@ type RSSItem struct {
 	Creator     string `xml:"dc:creator"`
 }
 
-
 // satisfy the bubbles list interface
 type rssListItem struct {
 	title string
@@ -46,6 +48,7 @@ type rssListItem struct {
 func (r rssListItem) Title() string       { return r.title }
 func (r rssListItem) Description() string { return r.desc }
 func (r rssListItem) FilterValue() string { return r.title }
+
 // ---------------------------------
 
 func toListItems(items []RSSItem) []list.Item {
@@ -83,6 +86,25 @@ func scrapeUrlFeed(url string) (RSSFeed, error) {
 	return rss.Channel, nil
 }
 
+func openBrowser(url string) error {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "linux":
+		cmd = "xdg-open"
+	case "windows":
+		cmd = "rundll32"
+		args = []string{"url.dll,FileProtocolHandler"}
+	case "darwin":
+		cmd = "open"
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
+	args = append(args, url)
+	return exec.Command(cmd, args...).Start()
+}
+
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
 type model struct {
@@ -112,6 +134,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showDetail = false
 			return m, nil
 		}
+
+		if msg.String() == "o" {
+			if m.showDetail {
+				go openBrowser(m.selected.link)
+			}
+			return m, nil
+		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
@@ -124,13 +153,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.showDetail {
-		return docStyle.Render(fmt.Sprintf(
-			"Title: %s\n\nDescription:\n%s\n\nLink: %s\n\n [press Esc to go back]",
-			m.selected.title,
-			m.selected.desc,
-			m.selected.link,
-		))
+		out, err := glamour.Render(
+			fmt.Sprintf("# %s\n\n%s\n\n[Source](%s)\n\n*Press 'o' to open in browser, press Esc to go back.*",
+				m.selected.title,
+				m.selected.desc,
+				m.selected.link,
+			), "dark")
+		if err != nil {
+			log.Printf("Failed to render markdown: %v", err)
+			return fmt.Sprintf("Error showing details for article: %s", m.selected.title)
+		}
+		return out
+
 	}
+
 	return docStyle.Render(m.list.View())
 }
 
