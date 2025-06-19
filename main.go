@@ -6,7 +6,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type RSS struct {
@@ -28,6 +33,31 @@ type RSSItem struct {
 	Id          string `xml:"guid"`
 	PublishDate string `xml:"pubDate"`
 	Creator     string `xml:"dc:creator"`
+}
+
+
+// satisfy the bubbles list interface
+type rssListItem struct {
+	title string
+	desc  string
+	link  string
+}
+
+func (r rssListItem) Title() string       { return r.title }
+func (r rssListItem) Description() string { return r.desc }
+func (r rssListItem) FilterValue() string { return r.title }
+// ---------------------------------
+
+func toListItems(items []RSSItem) []list.Item {
+	l := make([]list.Item, len(items))
+	for i, item := range items {
+		l[i] = rssListItem{
+			title: item.Title,
+			desc:  item.Description,
+			link:  item.Link,
+		}
+	}
+	return l
 }
 
 func scrapeUrlFeed(url string) (RSSFeed, error) {
@@ -53,20 +83,76 @@ func scrapeUrlFeed(url string) (RSSFeed, error) {
 	return rss.Channel, nil
 }
 
+var docStyle = lipgloss.NewStyle().Margin(1, 2)
+
+type model struct {
+	list       list.Model
+	showDetail bool
+	selected   rssListItem
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		if msg.String() == "enter" {
+			if item, ok := m.list.SelectedItem().(rssListItem); ok {
+				m.showDetail = true
+				m.selected = item
+			}
+			return m, nil
+		}
+		if msg.String() == "esc" {
+			m.showDetail = false
+			return m, nil
+		}
+	case tea.WindowSizeMsg:
+		h, v := docStyle.GetFrameSize()
+		m.list.SetSize(msg.Width-h, msg.Height-v)
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m model) View() string {
+	if m.showDetail {
+		return docStyle.Render(fmt.Sprintf(
+			"Title: %s\n\nDescription:\n%s\n\nLink: %s\n\n [press Esc to go back]",
+			m.selected.title,
+			m.selected.desc,
+			m.selected.link,
+		))
+	}
+	return docStyle.Render(m.list.View())
+}
+
 func main() {
 	url := "https://rss.politico.com/playbook.xml"
 	feed, err := scrapeUrlFeed(url)
 	if err != nil {
 		log.Fatalf("Failed to fetch feed: %v", err)
 	}
+	delegate := list.NewDefaultDelegate()
+	delegate.ShowDescription = true
 
-	fmt.Printf("Feed: %s\n\n", feed.Title)
-	for _, item := range feed.Items {
-		fmt.Println("Title:", item.Title)
-		fmt.Println("Link:", item.Link)
-		fmt.Println("Description:", item.Description)
-		fmt.Println("Published:", item.PublishDate)
-		fmt.Println("Author:", item.Creator)
-		fmt.Println("-----")
+	fmt.Println("Fetched", len(feed.Items), "items from feed")
+
+	m := model{
+		list: list.New(toListItems(feed.Items), delegate, 0, 0),
 	}
+	m.list.Title = feed.Title
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Println("Error running program:", err)
+		os.Exit(1)
+	}
+
 }
