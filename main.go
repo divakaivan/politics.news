@@ -105,7 +105,9 @@ func openBrowser(url string) error {
 	return exec.Command(cmd, args...).Start()
 }
 
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
+var docStyle = lipgloss.NewStyle() //.Margin(1, 2)
+
+var modalStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("63")).Padding(1, 2).Width(60).Align(1)
 
 type model struct {
 	list       list.Model
@@ -152,6 +154,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	listView := docStyle.Render(m.list.View())
 	if m.showDetail {
 		out, err := glamour.Render(
 			fmt.Sprintf("# %s\n\n%s\n\n[Source](%s)\n\n*Press 'o' to open in browser, press Esc to go back.*",
@@ -161,13 +164,12 @@ func (m model) View() string {
 			), "dark")
 		if err != nil {
 			log.Printf("Failed to render markdown: %v", err)
-			return fmt.Sprintf("Error showing details for article: %s", m.selected.title)
+			return listView
 		}
-		return out
-
+		modal := modalStyle.Render(out)
+		return listView + "\n\n" + modal
 	}
-
-	return docStyle.Render(m.list.View())
+	return listView
 }
 
 func main() {
@@ -190,5 +192,4 @@ func main() {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
-
 }
