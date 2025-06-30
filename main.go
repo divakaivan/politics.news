@@ -107,7 +107,7 @@ func openBrowser(url string) error {
 
 var docStyle = lipgloss.NewStyle() //.Margin(1, 2)
 
-var modalStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("63")).Padding(1, 2).Width(60).Align(1)
+var modalStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("63")).Padding(1, 2).Width(60).Align(0)
 
 type model struct {
 	list       list.Model
